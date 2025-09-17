@@ -1,0 +1,36 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+env/
+venv/
+ENV/
+
+# Torch / model checkpoints and large binaries
+*.pt
+*.pth
+*.ckpt
+*.tar
+
+# Training outputs
+save_model/
+runs/
+logs/
+*.log
+
+# Jupyter/IPython
+.ipynb_checkpoints/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+
+# TensorBoard
+tb_logs/
