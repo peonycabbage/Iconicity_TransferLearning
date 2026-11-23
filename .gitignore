@@ -34,3 +34,7 @@ Thumbs.db
 
 # TensorBoard
 tb_logs/
+
+# Local datasets and pretrained weights
+/data/
+/checkpoints/

@@ -1,6 +1,5 @@
 import numpy as np
-from sklearn.metrics import confusion_matrix
-from utils import AverageMeter
+from metric_utils import AverageMeter
 
 from model import MLP
 from dataset import loadedDataset
@@ -14,7 +13,6 @@ import torch.hub
 torch.backends.cudnn.benchmark = True
 from torch.utils.tensorboard import SummaryWriter
 
-from torchvision import transforms, utils
 
 # -------------------- Device --------------------
 if torch.cuda.is_available():
@@ -90,11 +88,9 @@ def adjust_learning_rate(optimizer, epoch):
 y_pred = []
 y_true = []
 def accuracy(output, target, topk=(1,)):
-    maxk = max(topk)
+    maxk = min(max(topk), output.size(1))
     batch_size = target.size(0)
     _, pred = output.topk(maxk, 1, True, True)
-    pred = pred.cuda()
-    target = target.cuda()
     pred = pred.t()
     correct = pred.eq(target.view(1, -1).expand_as(pred))
     res = []
@@ -113,8 +109,8 @@ def train(train_loader, model, criterion, optimizer, epoch):
     loader_iter = iter(train_loader)
 
     for i, (inputs, target, _) in enumerate(loader_iter):
-        input_var = [input.cuda() for input in inputs]
-        target_var = target.cuda()
+        input_var = [input.to(device) for input in inputs]
+        target_var = target.to(device)
 
         # compute output
         output = model(input_var)
@@ -123,7 +119,7 @@ def train(train_loader, model, criterion, optimizer, epoch):
         training_losses.update(loss.item(), 1)
 
         # compute accuracy
-        prec1, prec5 = accuracy(output.data.cpu(), target, topk=(1, 5))
+        prec1, prec5 = accuracy(output.detach(), target_var, topk=(1, 5))
         toptrain1.update(prec1[0].item(), 1)
         top5.update(prec5[0].item(), 1)
 
@@ -158,8 +154,8 @@ def validate(val_loader, model, criterion):
     model.eval()
 
     for i, (inputs, target, _) in enumerate(val_loader):
-        input_var = [input.cuda() for input in inputs]
-        target_var = target.cuda()
+        input_var = [input.to(device) for input in inputs]
+        target_var = target.to(device)
 
         # compute output
         with torch.no_grad():
@@ -169,7 +165,7 @@ def validate(val_loader, model, criterion):
             val_losses.update(loss.item(), 1)
 
         # compute accuracy
-        prec1, prec5 = accuracy(output.data.cpu(), target, topk=(1, 5))
+        prec1, prec5 = accuracy(output.detach(), target_var, topk=(1, 5))
         top1.update(prec1[0].item(), 1)
         top5.update(prec5[0].item(), 1)
 
@@ -195,15 +191,6 @@ if __name__ == '__main__':
     traindir = args.train_dir
     valdir = args.val_dir
 
-    transform = (transforms.Compose([
-                                    transforms.ToTensor()
-                                   ]
-                                    ),
-                 transforms.Compose([
-                     transforms.ToTensor()]
-    )
-    )
-
     train_dataset = loadedDataset(traindir)
     val_dataset = loadedDataset(valdir)
 
@@ -226,19 +213,25 @@ if __name__ == '__main__':
         print("==> resuming existing run '{}' ".format(model_info.get('arch', args.arch)))
         model = MLP(
             model_info['num_classes'], model_info['rnn_layers'], model_info['hidden_size'], model_info['fc_size'])
-        model.cuda()
+        model.to(device)
         model.load_state_dict(model_info['state_dict'])
         best_prec = model_info.get('best_prec', 0)
         cur_epoch = model_info.get('epoch', 0)
-    elif args.pretrained and os.path.exists(args.pretrained):
-        # Load PRETRAINED weights from another sign language (strict=False)
+    elif args.pretrained:
         print(f"==> loading PRETRAINED weights from: {args.pretrained}")
         model = MLP(
             len(train_dataset.classes), args.rnn_layers, args.hidden_size, args.fc_size)
-        model.cuda()
+        model.to(device)
         pretrained = torch.load(args.pretrained, map_location='cpu')
-        missing, unexpected = model.load_state_dict(pretrained['state_dict'], strict=False)
-        print(f"Loaded pretrained with strict=False. Missing keys: {len(missing)}, Unexpected: {len(unexpected)}")
+        target_state = model.state_dict()
+        compatible_weights = {
+            name: weight for name, weight in pretrained['state_dict'].items()
+            if name in target_state and weight.shape == target_state[name].shape
+        }
+        if not compatible_weights:
+            raise ValueError("No pretrained weights match the target model")
+        model.load_state_dict(compatible_weights, strict=False)
+        print(f"Loaded {len(compatible_weights)} compatible parameter tensors")
         best_prec = 0
         cur_epoch = 0
     else:
@@ -246,12 +239,12 @@ if __name__ == '__main__':
         print("==> creating model '{}' ".format(args.arch))
         model = MLP(
             len(train_dataset.classes), args.rnn_layers, args.hidden_size, args.fc_size)
-        model.cuda()
+        model.to(device)
         best_prec = 0
         cur_epoch = 0
 
     # ----------------- Loss / Optim -----------------
-    criterion = nn.CrossEntropyLoss().cuda()
+    criterion = nn.CrossEntropyLoss().to(device)
     optimizer = torch.optim.Adam([{'params': model.fc_pre.parameters()},
                                   {'params': model.rnn.parameters()},
                                   {'params': model.fc.parameters()}],

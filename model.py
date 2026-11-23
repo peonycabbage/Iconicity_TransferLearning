@@ -25,13 +25,13 @@ class MLP(nn.Module):
 
   
   def init_hidden(self, num_layers, batch_size):
-             return (torch.zeros(num_layers, batch_size, self.hidden_size).cuda(),
-                     torch.zeros(num_layers, batch_size, self.hidden_size).cuda())
+             return (torch.zeros(num_layers, batch_size, self.hidden_size).to(self.fc.weight.device),
+                     torch.zeros(num_layers, batch_size, self.hidden_size).to(self.fc.weight.device))
   
    
   def forward(self, inputs, hidden=None, steps=0):
         length = len(inputs)
-        fs = torch.zeros(inputs[0].size(0), length, self.rnn.input_size).cuda()
+        fs = inputs[0].new_zeros(inputs[0].size(0), length, self.rnn.input_size)
         for i in range(length):
             f = inputs[i]
             
